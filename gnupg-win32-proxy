@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+# gnupg-win32-proxy (c) 2016 ianweller@buttslol.net
+# This program is free software. It comes without any warranty, to the extent
+# permitted by any applicable law. You can redistribute it and/or modify it
+# under the terms of the Do What The Fuck You Want To Public License, Version
+# 2, as published by Sam Hocevar. See the COPYING file for more details.
+
+import asyncore
+import os
+import socket
+
+DEFAULT_ORIG_PATH = os.path.join(os.environ['APPDATA'], 'gnupg', 'S.gpg-agent')
+DEFAULT_RELAY_PATH = os.path.join(os.environ['HOME'], '.S.gpg-agent-relay')
+
+
+class Relay(asyncore.dispatcher_with_send):
+
+    def __init__(self, conn, orig_path):
+        asyncore.dispatcher_with_send.__init__(self)
+        self.orig_conn = conn
+
+        with open(orig_path, 'rb') as f:
+            port, nonce = f.read().split(b'\n', 1)
+            assert len(nonce) == 16
+
+        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.connect(('127.0.0.1', int(port)))
+        self.send(nonce)
+
+    def handle_read(self):
+        data = self.recv(2048)
+        if data:
+            self.orig_conn.send(data)
+
+
+class RelayListener(asyncore.dispatcher_with_send):
+
+    def __init__(self, conn, orig_path):
+        asyncore.dispatcher_with_send.__init__(self, conn)
+        self.relay = Relay(self, orig_path)
+
+    def handle_read(self):
+        data = self.recv(2048)
+        if data:
+            self.relay.send(data)
+
+
+class Server(asyncore.dispatcher):
+
+    def __init__(self, orig_path=DEFAULT_ORIG_PATH,
+                 relay_path=DEFAULT_RELAY_PATH):
+        asyncore.dispatcher.__init__(self)
+        self.orig_path = orig_path
+
+        self.create_socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.set_reuse_addr()
+        try:
+            os.unlink(relay_path)
+        except FileNotFoundError:
+            pass
+        self.bind(relay_path)
+        self.listen(5)
+
+    def handle_accept(self):
+        conn, addr = self.accept()
+        RelayListener(conn, self.orig_path)
+
+
+if __name__ == '__main__':
+    app = Server()
+    try:
+        asyncore.loop()
+    except KeyboardInterrupt:
+        pass
