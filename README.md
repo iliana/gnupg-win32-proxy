@@ -9,6 +9,8 @@ No? That's a relief.
 
 ---
 
+**SECURITY NOTE**: I do not know the intricacies of Cygwin permissions so I cannot recommend running this on a multi-user system.
+
 [GnuPG builds for Windows use a TCP socket][lolwindows] since UNIX sockets kind of don't exist on Windows. To prevent other users on the same system from using the socket, a 16-byte nonce is used to authenticate the connection.
 
 This Python 3 script is meant to be run within Cygwin. It opens a "UNIX" "socket", and upon receiving a connection, it opens a connection to the gpg-agent's TCP socket and writes the nonce to it, then proxies the rest of the communication.
